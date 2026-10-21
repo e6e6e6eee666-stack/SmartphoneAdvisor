@@ -75,7 +75,7 @@ jobs:
             echo "::error::Gradle wrapper is missing or not executable."
             exit 1
           fi
-          ./gradlew --no-daemon assembleDebug testDebugUnitTest
+          gradle --no-daemon assembleDebug testDebugUnitTest
 
       - name: Run Android instrumented tests
         uses: reactivecircus/android-emulator-runner@v2
@@ -85,7 +85,7 @@ jobs:
           profile: pixel_2
           script: |
             cd "$ANDROID_PROJECT_DIR"
-            ./gradlew --no-daemon connectedDebugAndroidTest
+            gradle --no-daemon connectedDebugAndroidTest
 
       - name: Upload APK
         if: success()
