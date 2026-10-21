@@ -71,10 +71,6 @@ jobs:
         run: |
           set -euo pipefail
           cd "$ANDROID_PROJECT_DIR"
-          if [ ! -x ./gradlew ]; then
-            echo "::error::Gradle wrapper is missing or not executable."
-            exit 1
-          fi
           gradle --no-daemon assembleDebug testDebugUnitTest
 
       - name: Run Android instrumented tests
