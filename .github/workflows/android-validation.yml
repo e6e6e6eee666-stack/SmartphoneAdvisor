@@ -47,7 +47,10 @@ jobs:
           fi
           echo "ANDROID_PROJECT_DIR=$PROJECT_ROOT" >> "$GITHUB_ENV"
           echo "Project root: $PROJECT_ROOT"
-
+          echo "===== ROOT PLUGINS ====="
+          sed -n '1,100p' "$PROJECT_ROOT/build.gradle.kts" 2>/dev/null || true
+          echo "===== APP PLUGINS ====="
+          sed -n '1,100p' "$PROJECT_ROOT/app/build.gradle.kts" 2>/dev/null || true
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
