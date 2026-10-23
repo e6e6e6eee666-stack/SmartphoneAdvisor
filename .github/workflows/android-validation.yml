@@ -46,12 +46,7 @@ jobs:
           fi
           echo "ANDROID_PROJECT_DIR=$PROJECT_ROOT" >> "$GITHUB_ENV"
           echo "Project root: $PROJECT_ROOT"
-          - name: Fix Gradle wrapper
-          shell: bash
-          run: |
-          cd "$ANDROID_PROJECT_DIR"
-          gradle wrapper --gradle-version 9.6.0
-          chmod +x ./gradlew
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
@@ -64,6 +59,13 @@ jobs:
         run: |
           cd "$ANDROID_PROJECT_DIR"
           sed -i '/id("org.jetbrains.kotlin.android")/d' app/build.gradle.kts
+
+      - name: Fix Gradle wrapper
+        shell: bash
+        run: |
+          cd "$ANDROID_PROJECT_DIR"
+          gradle wrapper --gradle-version 9.6.0
+          chmod +x ./gradlew
 
       - name: Run Python regression suite
         shell: bash
@@ -81,11 +83,7 @@ jobs:
         run: |
           set -euo pipefail
           cd "$ANDROID_PROJECT_DIR"
-          if [ ! -x ./gradlew ]; then
-            echo "::error::Gradle wrapper is missing or not executable."
-            exit 1
-          fi
-          ./gradlew --no-daemon assembleDebug testDebugUnitTest
+          gradle --no-daemon assembleDebug testDebugUnitTest
 
       - name: Run Android instrumented tests
         uses: reactivecircus/android-emulator-runner@v2
@@ -95,7 +93,7 @@ jobs:
           profile: pixel_2
           script: |
             cd "$ANDROID_PROJECT_DIR"
-            gradle --no-daemon assembleDebug testDebugUnitTest
+            gradle --no-daemon connectedDebugAndroidTest
 
       - name: Upload APK
         if: success()
