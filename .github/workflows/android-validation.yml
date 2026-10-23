@@ -38,7 +38,7 @@ jobs:
           
           mkdir -p $ANDROID_HOME/cmdline-tools
           cd $ANDROID_HOME/cmdline-tools
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O tools.zip
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-12266719_latest.zip -O tools.zip
           unzip -q tools.zip
           mv cmdline-tools latest
           rm tools.zip
