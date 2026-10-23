@@ -64,8 +64,8 @@ jobs:
         shell: bash
         run: |
           cd "$ANDROID_PROJECT_DIR"
-          gradle wrapper --gradle-version 9.6.0
-          chmod +x ./gradlew
+          gradle --version
+          echo "Gradle version above"
 
       - name: Run Python regression suite
         shell: bash
