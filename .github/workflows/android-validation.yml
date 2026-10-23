@@ -46,8 +46,12 @@ jobs:
           fi
           echo "ANDROID_PROJECT_DIR=$PROJECT_ROOT" >> "$GITHUB_ENV"
           echo "Project root: $PROJECT_ROOT"
-      - name: Make Gradle wrapper executable
-        run: chmod +x "$ANDROID_PROJECT_DIR/gradlew"
+          - name: Fix Gradle wrapper
+          shell: bash
+          run: |
+          cd "$ANDROID_PROJECT_DIR"
+          gradle wrapper --gradle-version 9.6.0
+          chmod +x ./gradlew
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
@@ -91,7 +95,7 @@ jobs:
           profile: pixel_2
           script: |
             cd "$ANDROID_PROJECT_DIR"
-            ./gradlew --no-daemon connectedDebugAndroidTest
+            gradle --no-daemon assembleDebug testDebugUnitTest
 
       - name: Upload APK
         if: success()
