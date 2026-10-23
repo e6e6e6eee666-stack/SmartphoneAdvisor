@@ -103,3 +103,8 @@ jobs:
             extracted/**/app/build/reports/**
             extracted/**/app/build/test-results/**
           if-no-files-found: ignore
+       - name: Fix Kotlin plugin issue
+  shell: bash
+  run: |
+     cd "$ANDROID_PROJECT_DIR"
+     sed -i '/id("org.jetbrains.kotlin.android")/d' app/build.gradle.kts
