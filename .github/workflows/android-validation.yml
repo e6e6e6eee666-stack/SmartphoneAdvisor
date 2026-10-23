@@ -47,13 +47,14 @@ jobs:
             exit 1
           fi
           echo "ANDROID_PROJECT_DIR=$PROJECT_ROOT" >> "$GITHUB_ENV"
-          echo "Project root: $PROJECT_ROOT"
-
+          echo "Project root: $PROJECT_ROOT
+          
       - name: Install Android SDK components
-        shell: bash
-        run: |
-          set -euo pipefail
-          sdkmanager --install "platform-tools" "platforms;android-37" "platforms;android-36" "platforms;android-35" "build-tools;36.0.0"
+  shell: bash
+  run: |
+    set -euo pipefail
+    yes | sdkmanager --licenses
+    sdkmanager --install "platform-tools" "platforms;android-36" "platforms;android-35" "build-tools;36.0.0"
 
       - name: Run Python regression suite
         shell: bash
