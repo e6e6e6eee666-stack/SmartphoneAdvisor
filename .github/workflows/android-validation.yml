@@ -46,7 +46,8 @@ jobs:
           fi
           echo "ANDROID_PROJECT_DIR=$PROJECT_ROOT" >> "$GITHUB_ENV"
           echo "Project root: $PROJECT_ROOT"
-
+      - name: Make Gradle wrapper executable
+        run: chmod +x "$ANDROID_PROJECT_DIR/gradlew"
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
