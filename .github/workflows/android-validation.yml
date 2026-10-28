@@ -53,7 +53,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ZIP_FILE="SmartphoneAdvisor_0.05.07.zip"
+          ZIP_FILE="SmartphoneAdvisor_0.05.08.zip"
           if [ ! -f "$ZIP_FILE" ]; then
             echo "::error::Required source ZIP not found: $ZIP_FILE"
             exit 1
