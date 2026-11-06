@@ -57,10 +57,20 @@ jobs:
 
           sdkmanager --install \
             "platform-tools" \
-            "platforms;android-37" \
+            "platforms;android-37.0" \
             "platforms;android-36" \
             "platforms;android-35" \
             "build-tools;36.0.0"
+
+          if [ ! -d "$ANDROID_HOME/platforms/android-37.0" ]; then
+            echo "::error::Android SDK Platform 37.0 was not installed."
+            exit 1
+          fi
+
+          ln -sfn android-37.0 "$ANDROID_HOME/platforms/android-37"
+
+          echo "Installed Android SDK platforms:"
+          ls -la "$ANDROID_HOME/platforms"
 
       - name: Extract latest versioned source ZIP
         shell: bash
