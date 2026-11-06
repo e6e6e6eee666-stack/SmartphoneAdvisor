@@ -1,3 +1,4 @@
+
 name: Android build and runtime validation
 
 on:
@@ -14,27 +15,40 @@ jobs:
     timeout-minutes: 60
 
     steps:
+      # --------------------------------------------------
+      # 1. Repository
+      # --------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # --------------------------------------------------
+      # 2. Java
+      # --------------------------------------------------
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
+      # --------------------------------------------------
+      # 3. Gradle
+      # --------------------------------------------------
       - name: Set up Gradle 9.8.1
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.8.1'
 
+      # --------------------------------------------------
+      # 4. Android SDK
+      # SDK導入は直近の成功設定を維持
+      # --------------------------------------------------
       - name: Setup Android SDK manually
         shell: bash
         run: |
           set -euo pipefail
 
           export ANDROID_HOME="$HOME/android-sdk"
-          export ANDROID_SDK_ROOT="$HOME/android-sdk"
+          export ANDROID_SDK_ROOT="$ANDROID_HOME"
 
           echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
@@ -50,68 +64,126 @@ jobs:
           mv cmdline-tools latest
           rm tools.zip
 
-          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+
           echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
 
-          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
-          sdkmanager --install \
+          "$SDKMANAGER" --install \
             "platform-tools" \
             "platforms;android-37.0" \
             "platforms;android-36" \
             "platforms;android-35" \
             "build-tools;36.0.0"
 
-          if [ ! -d "$ANDROID_HOME/platforms/android-37.0" ]; then
-            echo "::error::Android SDK Platform 37.0 was not installed."
-            exit 1
-          fi
+          echo "Checking Android SDK installation..."
+
+          test -f "$ANDROID_HOME/platforms/android-37.0/android.jar"
+          test -f "$ANDROID_HOME/platforms/android-36/android.jar"
+          test -f "$ANDROID_HOME/platforms/android-35/android.jar"
+          test -x "$ANDROID_HOME/build-tools/36.0.0/aapt"
 
           ln -sfn android-37.0 "$ANDROID_HOME/platforms/android-37"
 
           echo "Installed Android SDK platforms:"
           ls -la "$ANDROID_HOME/platforms"
 
+          echo "Android SDK installation: PASS"
+
+      # --------------------------------------------------
+      # 5. Select and extract source ZIP
+      # 同じ最新版のZIPが複数ある場合は停止
+      # --------------------------------------------------
       - name: Extract latest versioned source ZIP
         shell: bash
         run: |
           set -euo pipefail
 
-          ZIP_FILE="$(
+          mapfile -t ZIP_CANDIDATES < <(
             find . -maxdepth 1 -type f \
-              -regextype posix-extended \
-              -regex './SmartphoneAdvisor_[0-9]+\.[0-9]+\.[0-9]+.*\.zip' \
               -printf '%f\n' |
-              sort -V |
-              tail -n 1
-          )"
+              grep -E '^SmartphoneAdvisor_[0-9]+\.[0-9]+\.[0-9]+.*\.zip$' |
+              sort -V
+          )
 
-          if [ -z "$ZIP_FILE" ]; then
+          if [ "${#ZIP_CANDIDATES[@]}" -eq 0 ]; then
             echo "::error::No versioned SmartphoneAdvisor ZIP found."
             exit 1
           fi
 
+          echo "Available source ZIP files:"
+          printf '%s\n' "${ZIP_CANDIDATES[@]}"
+
+          ZIP_FILE="${ZIP_CANDIDATES[${#ZIP_CANDIDATES[@]}-1]}"
+
+          get_version() {
+            sed -E \
+              's/^SmartphoneAdvisor_([0-9]+\.[0-9]+\.[0-9]+).*\.zip$/\1/' \
+              <<< "$1"
+          }
+
+          LATEST_VERSION="$(get_version "$ZIP_FILE")"
+          SAME_VERSION_COUNT=0
+
+          for candidate in "${ZIP_CANDIDATES[@]}"; do
+            if [ "$(get_version "$candidate")" = "$LATEST_VERSION" ]; then
+              SAME_VERSION_COUNT=$((SAME_VERSION_COUNT + 1))
+            fi
+          done
+
+          if [ "$SAME_VERSION_COUNT" -ne 1 ]; then
+            echo "::error::Multiple ZIP files have the latest version $LATEST_VERSION."
+            echo "::error::Keep only one ZIP for that version."
+            exit 1
+          fi
+
           echo "Selected source ZIP: $ZIP_FILE"
+          echo "Selected version: $LATEST_VERSION"
+
           echo "SOURCE_ZIP=$ZIP_FILE" >> "$GITHUB_ENV"
 
           mkdir -p extracted
           unzip -q "$ZIP_FILE" -d extracted
 
-          PROJECT_ROOT="$(
+          mapfile -d '' PROJECT_FILES < <(
             find extracted -type f \
               -name settings.gradle.kts \
-              -print -quit |
-              xargs -r dirname
-          )"
+              -print0
+          )
 
-          if [ -z "$PROJECT_ROOT" ]; then
-            echo "::error::settings.gradle.kts not found in source ZIP."
+          if [ "${#PROJECT_FILES[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one settings.gradle.kts."
+            echo "Found: ${#PROJECT_FILES[@]}"
+            printf '%s\n' "${PROJECT_FILES[@]}"
+            exit 1
+          fi
+
+          PROJECT_ROOT="$(dirname "${PROJECT_FILES[0]}")"
+
+          if [ ! -f "$PROJECT_ROOT/app/build.gradle.kts" ]; then
+            echo "::error::app/build.gradle.kts not found."
+            exit 1
+          fi
+
+          if [ ! -f "$PROJECT_ROOT/tools/run_current_regression_suite.py" ]; then
+            echo "::error::Python regression suite is missing."
             exit 1
           fi
 
           echo "ANDROID_PROJECT_DIR=$PROJECT_ROOT" >> "$GITHUB_ENV"
-          echo "Project root: $PROJECT_ROOT"
 
+          echo "Project root: $PROJECT_ROOT"
+          echo "Source ZIP validation: PASS"
+
+          echo "App build configuration:"
+          grep -nE 'compileSdk|minSdk|targetSdk' \
+            "$PROJECT_ROOT/app/build.gradle.kts" || true
+
+      # --------------------------------------------------
+      # 6. Python regression tests
+      # --------------------------------------------------
       - name: Run Python regression suite
         shell: bash
         run: |
@@ -119,13 +191,13 @@ jobs:
 
           cd "$ANDROID_PROJECT_DIR"
 
-          if [ ! -f tools/run_current_regression_suite.py ]; then
-            echo "::error::Required Python regression suite is missing."
-            exit 1
-          fi
+          python3 tools/run_current_regression_suite.py \
+            2>&1 | tee "$RUNNER_TEMP/python-regression.log"
 
-          python3 tools/run_current_regression_suite.py
-
+      # --------------------------------------------------
+      # 7. APK build and JVM unit tests
+      # 詳細ログ・スタックトレースを保存
+      # --------------------------------------------------
       - name: Build APK and run JVM unit tests
         shell: bash
         run: |
@@ -133,9 +205,50 @@ jobs:
 
           cd "$ANDROID_PROJECT_DIR"
 
-          gradle --no-daemon --warning-mode all \
-            assembleDebug testDebugUnitTest
+          gradle \
+            --no-daemon \
+            --warning-mode all \
+            --stacktrace \
+            --info \
+            assembleDebug \
+            testDebugUnitTest \
+            2>&1 | tee "$RUNNER_TEMP/gradle-build.log"
 
+      # --------------------------------------------------
+      # 8. Show compiler errors when build fails
+      # --------------------------------------------------
+      - name: Summarize build errors
+        if: failure()
+        shell: bash
+        run: |
+          set -u
+
+          {
+            echo "## Build failure diagnostics"
+            echo ""
+            echo "### Kotlin / Gradle error matches"
+            echo ""
+
+            if [ -f "$RUNNER_TEMP/gradle-build.log" ]; then
+              grep -nEi \
+                '(^e: |error:|Kotlin compiler error|Compilation error|Location:|Mixing named and positional|FAILED)' \
+                "$RUNNER_TEMP/gradle-build.log" |
+                tail -n 100 || true
+
+              echo ""
+              echo "### Last 120 lines of Gradle log"
+              echo '```text'
+              tail -n 120 "$RUNNER_TEMP/gradle-build.log"
+              echo '```'
+            else
+              echo "Gradle log was not created."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # --------------------------------------------------
+      # 9. Android emulator tests
+      # ビルド成功時のみ実行
+      # --------------------------------------------------
       - name: Run Android instrumented tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -144,9 +257,19 @@ jobs:
           profile: pixel_2
           script: |
             set -euo pipefail
-            cd "$ANDROID_PROJECT_DIR"
-            gradle --no-daemon --warning-mode all connectedDebugAndroidTest
 
+            cd "$ANDROID_PROJECT_DIR"
+
+            gradle \
+              --no-daemon \
+              --warning-mode all \
+              --stacktrace \
+              connectedDebugAndroidTest
+
+      # --------------------------------------------------
+      # 10. Upload APK
+      # 全工程成功時のみ保存
+      # --------------------------------------------------
       - name: Upload APK
         if: success()
         uses: actions/upload-artifact@v4
@@ -156,12 +279,19 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      # --------------------------------------------------
+      # 11. Always upload logs and reports
+      # 失敗してもログを残す
+      # --------------------------------------------------
       - name: Upload build and test reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: SmartphoneAdvisor-test-reports
           path: |
+            ${{ runner.temp }}/python-regression.log
+            ${{ runner.temp }}/gradle-build.log
+            extracted/**/build/reports/**
             extracted/**/app/build/reports/**
             extracted/**/app/build/test-results/**
             extracted/**/app/build/outputs/logs/**
