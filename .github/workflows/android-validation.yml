@@ -40,7 +40,6 @@ jobs:
 
       # --------------------------------------------------
       # 4. Android SDK
-      # SDK導入は直近の成功設定を維持
       # --------------------------------------------------
       - name: Setup Android SDK manually
         shell: bash
@@ -94,7 +93,7 @@ jobs:
 
       # --------------------------------------------------
       # 5. Select and extract source ZIP
-      # 同じ最新版のZIPが複数ある場合は停止
+      # Automatically select newest versioned ZIP
       # --------------------------------------------------
       - name: Extract latest versioned source ZIP
         shell: bash
@@ -142,8 +141,46 @@ jobs:
           echo "Selected source ZIP: $ZIP_FILE"
           echo "Selected version: $LATEST_VERSION"
 
-          echo "SOURCE_ZIP=$ZIP_FILE" >> "$GITHUB_ENV"
+          # Verify archive integrity
+          unzip -tq "$ZIP_FILE"
 
+          # Calculate SHA-256
+          ZIP_SHA256="$(sha256sum "$ZIP_FILE" | awk '{print $1}')"
+
+          echo "SOURCE_ZIP=$ZIP_FILE" >> "$GITHUB_ENV"
+          echo "SOURCE_VERSION=$LATEST_VERSION" >> "$GITHUB_ENV"
+          echo "SOURCE_ZIP_SHA256=$ZIP_SHA256" >> "$GITHUB_ENV"
+
+          # Record actual build input in GitHub Actions summary
+          {
+            echo "## Source ZIP selected for this run"
+            echo ""
+            echo "| Item | Value |"
+            echo "|---|---|"
+            echo "| Selected ZIP | \`$ZIP_FILE\` |"
+            echo "| Selected version | **$LATEST_VERSION** |"
+            echo "| ZIP SHA-256 | \`$ZIP_SHA256\` |"
+            echo "| Trigger | \`$GITHUB_EVENT_NAME\` |"
+            echo "| Branch/ref | \`$GITHUB_REF\` |"
+            echo "| Commit | \`$GITHUB_SHA\` |"
+            echo "| Run | [#$GITHUB_RUN_NUMBER]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID), attempt $GITHUB_RUN_ATTEMPT |"
+            echo ""
+            echo "### ZIP candidates found in this checkout"
+            echo ""
+
+            for candidate in "${ZIP_CANDIDATES[@]}"; do
+              if [ "$candidate" = "$ZIP_FILE" ]; then
+                printf -- '- **Selected:** \`%s\`\n' "$candidate"
+              else
+                printf -- '- \`%s\`\n' "$candidate"
+              fi
+            done
+
+            echo ""
+            echo "> The selected archive is the newest versioned ZIP present in the repository snapshot checked out for this workflow run. ZIPs uploaded after this run started are not included."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # Extract selected source
           mkdir -p extracted
           unzip -q "$ZIP_FILE" -d extracted
 
@@ -196,7 +233,6 @@ jobs:
 
       # --------------------------------------------------
       # 7. APK build and JVM unit tests
-      # 詳細ログ・スタックトレースを保存
       # --------------------------------------------------
       - name: Build APK and run JVM unit tests
         shell: bash
@@ -247,7 +283,6 @@ jobs:
 
       # --------------------------------------------------
       # 9. Android emulator tests
-      # ビルド成功時のみ実行
       # --------------------------------------------------
       - name: Run Android instrumented tests
         uses: reactivecircus/android-emulator-runner@v2
@@ -268,7 +303,6 @@ jobs:
 
       # --------------------------------------------------
       # 10. Upload APK
-      # 全工程成功時のみ保存
       # --------------------------------------------------
       - name: Upload APK
         if: success()
@@ -281,7 +315,6 @@ jobs:
 
       # --------------------------------------------------
       # 11. Always upload logs and reports
-      # 失敗してもログを残す
       # --------------------------------------------------
       - name: Upload build and test reports
         if: always()
