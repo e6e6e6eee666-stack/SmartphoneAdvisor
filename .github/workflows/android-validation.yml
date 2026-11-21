@@ -282,31 +282,39 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       # --------------------------------------------------
-      # 9. Enable and verify KVM for Android emulator
+      # 9. Enable KVM or allow software fallback
       # --------------------------------------------------
-      - name: Enable KVM group permissions
+      - name: Enable KVM or allow software fallback
         shell: bash
         run: |
           set -euo pipefail
 
-          if [ ! -e /dev/kvm ]; then
-            echo "::error::This runner does not expose /dev/kvm."
-            exit 1
+          if [ -e /dev/kvm ]; then
+            if echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+              | sudo tee /etc/udev/rules.d/99-kvm4all.rules >/dev/null \
+              && sudo udevadm control --reload-rules \
+              && sudo udevadm trigger --name-match=kvm; then
+              echo "KVM udev rule applied."
+            else
+              echo "::warning::Could not apply the KVM udev rule."
+            fi
+          else
+            echo "::warning::This runner does not expose /dev/kvm."
           fi
 
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          if [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
+            echo "KVM device access: PASS"
+            echo "Emulator acceleration: hardware (KVM)" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::KVM is unavailable to the runner. Android Emulator will use software TCG; this can be very slow."
 
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
+            echo "ANDROID_I_WANT_MY_TCG=yes" >> "$GITHUB_ENV"
 
-          if [ ! -r /dev/kvm ] || [ ! -w /dev/kvm ]; then
-            echo "::error::KVM access verification failed."
-            ls -l /dev/kvm || true
+            echo "Emulator acceleration: software TCG fallback" >> "$GITHUB_STEP_SUMMARY"
+
+            ls -l /dev/kvm 2>/dev/null || true
             id
-            exit 1
           fi
-
-          echo "KVM device access: PASS"
 
       # --------------------------------------------------
       # 10. Android emulator tests
@@ -317,7 +325,7 @@ jobs:
           api-level: 35
           arch: x86_64
           profile: pixel_2
-          disable-linux-hw-accel: false
+          disable-linux-hw-accel: auto
           script: |
             set -euo pipefail
 
